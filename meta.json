@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "metadata": {
+    "name": "extension-ops-route53",
+    "kind": "extension",
+    "layer": "ops",
+    "type": "route53",
+    "description": "AWS Route53 DNS and ACM SSL workflow extensions for AWS infrastructure",
+    "author": "Genesis2",
+    "tags": ["route53", "dns", "ssl", "acm", "github-actions", "aws"]
+  },
+  "requirements": {
+    "runtime": {
+      "node": ">=18.0.0"
+    },
+    "build": {
+      "github-actions": ">=3.0.0"
+    }
+  },
+  "generation": {
+    "directories": {
+      "create": [
+        ".github",
+        ".github/workflows"
+      ]
+    },
+    "templates": {
+      "mustache": [
+        ".github/workflows/Extension-210-client-ssl.yml.mustache",
+        ".github/workflows/Extension-310-server-ssl.yml.mustache"
+      ]
+    }
+  }
+}
