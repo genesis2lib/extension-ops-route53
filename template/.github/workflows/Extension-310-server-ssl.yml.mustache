@@ -24,21 +24,21 @@ jobs:
         run: |
 
           # Set environment variables
-          echo "BRANCH={{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" >> $GITHUB_ENV
-          if [[ "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "production" ]]; then
+          echo "BRANCH={{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" >> $GITHUB_ENV
+          if [[ "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" = "production" ]]; then
             echo "ENVIRONMENT=production" >> $GITHUB_ENV
           else
-            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" | sed "s///-/g")
+            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" | sed "s/-/-/g")
             echo "ENVIRONMENT=$BRANCH_ENV" >> $GITHUB_ENV
           fi
 
-          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}"
+          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::{{{githubVarsOpen}}} vars.AWS_ACCOUNT_ID {{{githubVarsClose}}}:role/{{projectName}}-terraform-role
-          aws-region: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
+          aws-region: {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -49,7 +49,7 @@ jobs:
       - name: Get Terraform Outputs
         run: |
           cd {{id}}/terraform
-          echo "🔍 Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}} environment..."
+          echo "🔍 Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}} environment..."
 
           # Initialize Terraform to access state
           terraform init -backend-config=backend-${ENVIRONMENT}.hcl -input=false
@@ -70,10 +70,10 @@ jobs:
 
       - name: Configure ALB SSL
         run: |
-          echo "🌐 Configuring ALB SSL for {{projectName}} {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}..."
+          echo "🌐 Configuring ALB SSL for {{projectName}} {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}..."
 
           PROJECT_NAME="{{projectName}}"
-          ENVIRONMENT="{{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}"
+          ENVIRONMENT="{{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}"
 
           # Domain construction with environment-specific prefix
           if [ "${ENVIRONMENT}" = "production" ]; then
@@ -81,7 +81,7 @@ jobs:
           else
             API_DOMAIN="{{projectName}}-${ENVIRONMENT}-api.{{sld}}.{{tld}}"
           fi
-          ALB_DNS="{{{githubVarsOpen}}} env.ALB_DNS  {{{githubVarsClose}}}"
+          ALB_DNS="{{{githubVarsOpen}}} env.ALB_DNS {{{githubVarsClose}}}"
 
           echo "📋 Configuration:"
           echo "  Project: $PROJECT_NAME"
@@ -117,14 +117,14 @@ jobs:
           fi
 
           # Find or create ACM certificate for the domain (ALB requires certificate in same region)
-          echo "🔍 Looking for ACM certificate in {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} (ALB region)..."
+          echo "🔍 Looking for ACM certificate in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} (ALB region)..."
           echo "🔍 Searching for domain: $API_DOMAIN"
 
           # Debug: List all certificates first
-          echo "🔍 DEBUG: All available certificates in {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}:"
-          aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} --query "CertificateSummaryList[].{Domain:DomainName,SAN:SubjectAlternativeNameSummary,Arn:CertificateArn}" --output table || true
+          echo "🔍 DEBUG: All available certificates in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}:"
+          aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].{Domain:DomainName,SAN:SubjectAlternativeNameSummary,Arn:CertificateArn}" --output table || true
 
-          CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+          CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
             --query "CertificateSummaryList[?DomainName=='$API_DOMAIN'].CertificateArn" \
             --output text 2>/dev/null | head -1 || true)
 
@@ -132,11 +132,11 @@ jobs:
           if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
             echo "🔍 Searching in Subject Alternative Names..."
             # Get all certificates and search manually
-            ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
+            ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
             while IFS=$'\t' read -r cert_arn cert_domain; do
               if [ -n "$cert_arn" ]; then
                 # Get detailed certificate info to check SAN
-                SAN_DOMAINS=$(aws acm describe-certificate --certificate-arn "$cert_arn" --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+                SAN_DOMAINS=$(aws acm describe-certificate --certificate-arn "$cert_arn" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                   --query "Certificate.SubjectAlternativeNames" --output text 2>/dev/null || true)
                 if echo "$SAN_DOMAINS" | grep -q "$API_DOMAIN"; then
                   CERT_ARN="$cert_arn"
@@ -157,18 +157,18 @@ jobs:
             WILDCARD_DOMAIN="*.{{sld}}.{{tld}}"
             echo "🔍 Searching for wildcard: $WILDCARD_DOMAIN"
 
-            CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+            CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
               --query "CertificateSummaryList[?DomainName=='$WILDCARD_DOMAIN'].CertificateArn" \
               --output text 2>/dev/null | head -1 || true)
 
             # If not found by domain name, search in SAN manually
             if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
               echo "🔍 Searching wildcard in Subject Alternative Names..."
-              ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
+              ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
               while IFS=$'\t' read -r cert_arn cert_domain; do
                 if [ -n "$cert_arn" ]; then
                   # Get detailed certificate info to check SAN
-                  SAN_DOMAINS=$(aws acm describe-certificate --certificate-arn "$cert_arn" --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+                  SAN_DOMAINS=$(aws acm describe-certificate --certificate-arn "$cert_arn" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                     --query "Certificate.SubjectAlternativeNames" --output text 2>/dev/null || true)
                   if echo "$SAN_DOMAINS" | grep -q "$WILDCARD_DOMAIN"; then
                     CERT_ARN="$cert_arn"
@@ -205,7 +205,7 @@ jobs:
               CERT_ARN=$(aws acm request-certificate \
                 --domain-name "$API_DOMAIN" \
                 --validation-method DNS \
-                --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+                --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                 --query 'CertificateArn' \
                 --output text 2>/dev/null || true)
 
@@ -223,7 +223,7 @@ jobs:
               # Get DNS validation records
               VALIDATION_RECORD=$(aws acm describe-certificate \
                 --certificate-arn "$CERT_ARN" \
-                --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+                --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                 --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
                 --output json 2>/dev/null || true)
 
@@ -285,7 +285,7 @@ EOF
               MAX_WAIT=30  # 30 checks = ~10 minutes (20 seconds between checks)
 
               while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-                CERT_STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+                CERT_STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                   --query 'Certificate.Status' --output text 2>/dev/null || echo "UNKNOWN")
 
                 echo "Certificate status: $CERT_STATUS (check $((WAIT_COUNT + 1))/$MAX_WAIT)"
@@ -320,7 +320,7 @@ EOF
 
           # Check certificate status
           echo "🔍 Checking certificate status..."
-          CERT_STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}} \
+          CERT_STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
             --query 'Certificate.Status' --output text 2>/dev/null || echo "UNKNOWN")
 
           echo "Certificate status: $CERT_STATUS"
@@ -416,7 +416,7 @@ EOF
           echo "🔍 Setting up Route53 DNS for ALB..."
 
           # Get ALB DNS name from environment
-          ALB_DNS="{{{githubVarsOpen}}} env.ALB_DNS  {{{githubVarsClose}}}"
+          ALB_DNS="{{{githubVarsOpen}}} env.ALB_DNS {{{githubVarsClose}}}"
 
           if [ -z "$ALB_DNS" ]; then
             echo "❌ Could not get ALB DNS name"
@@ -457,7 +457,7 @@ EOF
 
           # Get ALB hosted zone ID (regional)
           ALB_HOSTED_ZONE_ID=""
-          case "{{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}" in
+          case "{{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}" in
             "us-east-1") ALB_HOSTED_ZONE_ID="Z35SXDOTRQ7X7K" ;;
             "us-east-2") ALB_HOSTED_ZONE_ID="Z3AADJGX6KTTL2" ;;
             "us-west-1") ALB_HOSTED_ZONE_ID="Z368ELLRRE2KJ0" ;;
@@ -469,7 +469,7 @@ EOF
             "ap-southeast-2") ALB_HOSTED_ZONE_ID="Z1GM3OXH4ZPM65" ;;
             "ap-northeast-1") ALB_HOSTED_ZONE_ID="Z14GRHDCWA56QT" ;;
             *)
-              echo "❌ Unsupported region for ALB alias: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}"
+              echo "❌ Unsupported region for ALB alias: {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}"
               echo "💡 Please check AWS documentation for ALB hosted zone IDs"
               exit 1
               ;;

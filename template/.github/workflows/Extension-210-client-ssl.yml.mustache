@@ -24,28 +24,28 @@ jobs:
         run: |
 
           # Set environment variables
-          echo "BRANCH={{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" >> $GITHUB_ENV
-          if [[ "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" = "production" ]]; then
+          echo "BRANCH={{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" >> $GITHUB_ENV
+          if [[ "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" = "main" || "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" = "production" ]]; then
             echo "ENVIRONMENT=production" >> $GITHUB_ENV
           else
-            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}" | sed "s///-/g")
+            BRANCH_ENV=$(echo "{{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}" | sed "s/-/-/g")
             echo "ENVIRONMENT=$BRANCH_ENV" >> $GITHUB_ENV
           fi
 
-          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name  {{{githubVarsClose}}}"
+          echo "✅ Environment setup completed: {{{githubVarsOpen}}} github.ref_name {{{githubVarsClose}}}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::{{{githubVarsOpen}}} vars.AWS_ACCOUNT_ID {{{githubVarsClose}}}:role/{{projectName}}-terraform-role
-          aws-region: {{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}
+          aws-region: {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}
 
       - name: Configure CloudFront Alternate Domain
         run: |
-          echo "🌐 Configuring CloudFront alternate domain for {{projectName}} {{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}..."
+          echo "🌐 Configuring CloudFront alternate domain for {{projectName}} {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}..."
 
           PROJECT_NAME="{{projectName}}"
-          ENVIRONMENT="{{{githubVarsOpen}}} env.ENVIRONMENT  {{{githubVarsClose}}}"
+          ENVIRONMENT="{{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}}"
 
           # Domain construction with environment-specific prefix
           if [ "${ENVIRONMENT}" = "production" ]; then
@@ -331,7 +331,7 @@ EOF
             --if-match "$ETAG"
 
           echo "⏳ Waiting for distribution update to deploy (this can take 15-20 minutes)..."
-          echo "💡 You can monitor progress in AWS Console: https://console.aws.amazon.com/cloudfront/home?region={{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}#distribution-settings:$DISTRIBUTION_ID"
+          echo "💡 You can monitor progress in AWS Console: https://console.aws.amazon.com/cloudfront/home?region={{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}#distribution-settings:$DISTRIBUTION_ID"
 
           # Check deployment status periodically with timeout
           WAIT_COUNT=0
@@ -358,7 +358,7 @@ EOF
           if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
             echo "⚠️ Wait timed out after ~20 minutes, but update was initiated successfully"
             echo "Distribution will continue deploying in the background"
-            echo "Check AWS Console for final status: https://console.aws.amazon.com/cloudfront/home?region={{{githubVarsOpen}}} env.AWS_REGION  {{{githubVarsClose}}}#distribution-settings:$DISTRIBUTION_ID"
+            echo "Check AWS Console for final status: https://console.aws.amazon.com/cloudfront/home?region={{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}#distribution-settings:$DISTRIBUTION_ID"
           fi
 
           echo "✅ CloudFront alternate domain configuration completed!"
@@ -381,7 +381,7 @@ EOF
 
           # Get CloudFront domain from the distribution
           echo "🔍 Getting CloudFront domain name..."
-          DISTRIBUTION_ID="{{{githubVarsOpen}}} env.DISTRIBUTION_ID  {{{githubVarsClose}}}"
+          DISTRIBUTION_ID="{{{githubVarsOpen}}} env.DISTRIBUTION_ID {{{githubVarsClose}}}"
           CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" \
             --query 'Distribution.DomainName' --output text 2>/dev/null || echo "")
 
