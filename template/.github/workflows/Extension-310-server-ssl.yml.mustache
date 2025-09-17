@@ -48,7 +48,7 @@ jobs:
 
       - name: Get Terraform Outputs
         run: |
-          cd {{id}}/terraform
+          cd ops-aws-{{name}}/terraform
           echo "DEBUG: Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}} environment..."
 
           # Initialize Terraform to access state
