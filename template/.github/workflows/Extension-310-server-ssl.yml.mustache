@@ -204,6 +204,7 @@ jobs:
               echo "📋 Requesting ACM certificate for $API_DOMAIN..."
               CERT_ARN=$(aws acm request-certificate \
                 --domain-name "$API_DOMAIN" \
+                --subject-alternative-names "*.{{sld}}.{{tld}}" "{{sld}}.{{tld}}" \
                 --validation-method DNS \
                 --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
                 --query 'CertificateArn' \
@@ -342,39 +343,37 @@ jobs:
 
             echo "✅ Found Route53 hosted zone: $HOSTED_ZONE_ID"
 
-            # Get DNS validation records
+            # Get DNS validation records (same as Cloudflare workflow)
             echo "🔍 Getting DNS validation records..."
-            VALIDATION_RECORD=$(aws acm describe-certificate \
-              --certificate-arn "$CERT_ARN" \
-              --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
-              --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
-              --output json 2>/dev/null || true)
+            aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
+              --query 'Certificate.DomainValidationOptions[].ResourceRecord.{Name:Name,Type:Type,Value:Value}' \
+              --output table 2>/dev/null || true
 
-            if [ -z "$VALIDATION_RECORD" ] || [ "$VALIDATION_RECORD" = "null" ]; then
-              echo "❌ Could not get DNS validation records"
+            echo ""
+            echo "📝 Creating Route53 validation records automatically..."
+
+            # Get all validation records as JSON
+            VALIDATION_RECORDS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
+              --query 'Certificate.DomainValidationOptions[].ResourceRecord' \
+              --output json 2>/dev/null || echo "[]")
+
+            if [ "$VALIDATION_RECORDS" = "[]" ] || [ -z "$VALIDATION_RECORDS" ]; then
+              echo "❌ No validation records found"
               exit 1
             fi
 
-            VALIDATION_NAME=$(echo "$VALIDATION_RECORD" | jq -r '.Name' 2>/dev/null)
-            VALIDATION_VALUE=$(echo "$VALIDATION_RECORD" | jq -r '.Value' 2>/dev/null)
-
-            echo "📋 DNS Validation Record:"
-            echo "  Name: $VALIDATION_NAME"
-            echo "  Value: $VALIDATION_VALUE"
-
-            # Create Route53 record for validation
-            echo "📝 Creating Route53 validation record..."
-            jq -n --arg name "$VALIDATION_NAME" --arg value "$VALIDATION_VALUE" '{
+            # Build Route53 change batch (deduplicate records and strip domain suffix)
+            jq -n --argjson records "$VALIDATION_RECORDS" --arg domain "{{sld}}.{{tld}}." '{
               "Changes": [
-                {
+                $records | unique_by(.Name) | .[] | {
                   "Action": "UPSERT",
                   "ResourceRecordSet": {
-                    "Name": $name,
+                    "Name": (.Name | if endswith($domain) then .[:-($domain|length)] else . end | rtrimstr(".")),
                     "Type": "CNAME",
                     "TTL": 300,
                     "ResourceRecords": [
                       {
-                        "Value": $value
+                        "Value": .Value
                       }
                     ]
                   }
