@@ -372,24 +372,22 @@ jobs:
                 echo ',' >> /tmp/validation-record.json
               fi
               
-              # Strip domain suffix and trailing dots for Route53
+              # Use full domain name for Route53 but remove trailing dot
                 clean_name=$(echo "$name" | sed 's/\.$//')
               
-              cat >> /tmp/validation-record.json << EOF
-              {
+              printf '              {
                 "Action": "UPSERT",
                 "ResourceRecordSet": {
-                  "Name": "$clean_name",
+                  "Name": "%s",
                   "Type": "CNAME",
                   "TTL": 300,
                   "ResourceRecords": [
                     {
-                      "Value": "$value"
+                      "Value": "%s"
                     }
                   ]
                 }
-              }
-EOF
+              }' "$clean_name" "$value" >> /tmp/validation-record.json
             done < /tmp/validation-pairs.txt
             
             echo ']}' >> /tmp/validation-record.json
