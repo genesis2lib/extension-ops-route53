@@ -49,7 +49,7 @@ jobs:
       - name: Get Terraform Outputs
         run: |
           cd {{id}}/terraform
-          echo "🔍 Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}} environment..."
+          echo "DEBUG: Getting Terraform outputs for {{{githubVarsOpen}}} env.ENVIRONMENT {{{githubVarsClose}}} environment..."
 
           # Initialize Terraform to access state
           terraform init -backend-config=backend-${ENVIRONMENT}.hcl -input=false
@@ -59,7 +59,7 @@ jobs:
 
           if [ -z "$ALB_DNS" ]; then
             echo "❌ Could not get ALB DNS name from Terraform outputs"
-            echo "🔍 Available Terraform outputs:"
+            echo "DEBUG: Available Terraform outputs:"
             terraform output
             echo "⚠️ Infrastructure may not be deployed yet - run deploy_apply first"
             exit 1
@@ -90,7 +90,7 @@ jobs:
           echo "  ALB DNS: $ALB_DNS"
 
           # Find the ALB using the DNS name from Terraform
-          echo "🔍 Finding Application Load Balancer..."
+          echo "DEBUG: Finding Application Load Balancer..."
           ALB_ARN=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?DNSName=='$ALB_DNS'].LoadBalancerArn" \
             --output text 2>/dev/null || true)
@@ -104,7 +104,7 @@ jobs:
           echo "✅ Found ALB: $ALB_ARN"
 
           # Check if HTTPS listener already exists
-          echo "🔍 Checking current listeners..."
+          echo "DEBUG: Checking current listeners..."
           HTTPS_LISTENER=$(aws elbv2 describe-listeners \
             --load-balancer-arn "$ALB_ARN" \
             --query "Listeners[?Port==\`443\`].ListenerArn" \
@@ -117,11 +117,11 @@ jobs:
           fi
 
           # Find or create ACM certificate for the domain (ALB requires certificate in same region)
-          echo "🔍 Looking for ACM certificate in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} (ALB region)..."
-          echo "🔍 Searching for domain: $API_DOMAIN"
+          echo "DEBUG: Looking for ACM certificate in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} (ALB region)..."
+          echo "DEBUG: Searching for domain: $API_DOMAIN"
 
           # Debug: List all certificates first
-          echo "🔍 DEBUG: All available certificates in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}:"
+          echo "DEBUG: DEBUG: All available certificates in {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}}:"
           aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].{Domain:DomainName,SAN:SubjectAlternativeNameSummary,Arn:CertificateArn}" --output table || true
 
           CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
@@ -130,7 +130,7 @@ jobs:
 
           # If not found by domain name, search in SAN using a simpler approach
           if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
-            echo "🔍 Searching in Subject Alternative Names..."
+            echo "DEBUG: Searching in Subject Alternative Names..."
             # Get all certificates and search manually
             ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
             while IFS=$'\t' read -r cert_arn cert_domain; do
@@ -147,15 +147,15 @@ jobs:
             done <<< "$ALL_CERTS"
           fi
 
-          echo "🔍 DEBUG: Query result for exact domain: '$CERT_ARN'"
+          echo "DEBUG: DEBUG: Query result for exact domain: '$CERT_ARN'"
 
           if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
             echo "⚠️ No ACM certificate found for domain: $API_DOMAIN"
-            echo "🔍 Looking for wildcard certificate that might cover this domain..."
+            echo "DEBUG: Looking for wildcard certificate that might cover this domain..."
 
             # Check for wildcard certificates
             WILDCARD_DOMAIN="*.{{sld}}.{{tld}}"
-            echo "🔍 Searching for wildcard: $WILDCARD_DOMAIN"
+            echo "DEBUG: Searching for wildcard: $WILDCARD_DOMAIN"
 
             CERT_ARN=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
               --query "CertificateSummaryList[?DomainName=='$WILDCARD_DOMAIN'].CertificateArn" \
@@ -163,7 +163,7 @@ jobs:
 
             # If not found by domain name, search in SAN manually
             if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
-              echo "🔍 Searching wildcard in Subject Alternative Names..."
+              echo "DEBUG: Searching wildcard in Subject Alternative Names..."
               ALL_CERTS=$(aws acm list-certificates --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} --query "CertificateSummaryList[].[CertificateArn,DomainName]" --output text 2>/dev/null || true)
               while IFS=$'\t' read -r cert_arn cert_domain; do
                 if [ -n "$cert_arn" ]; then
@@ -179,14 +179,14 @@ jobs:
               done <<< "$ALL_CERTS"
             fi
 
-            echo "🔍 DEBUG: Query result for wildcard: '$CERT_ARN'"
+            echo "DEBUG: DEBUG: Query result for wildcard: '$CERT_ARN'"
 
             if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; then
               echo "📝 No suitable certificate found. Creating new ACM certificate with Route53 validation..."
 
               # Find Route53 hosted zone for the domain
               DOMAIN_BASE="{{sld}}.{{tld}}"
-              echo "🔍 Finding Route53 hosted zone for: $DOMAIN_BASE"
+              echo "DEBUG: Finding Route53 hosted zone for: $DOMAIN_BASE"
 
               HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
                 --query "HostedZones[?Name=='$DOMAIN_BASE.'].Id" \
@@ -221,50 +221,72 @@ jobs:
               echo "⏳ Waiting for certificate validation records..."
               sleep 10
 
-              # Get DNS validation records
-              VALIDATION_RECORD=$(aws acm describe-certificate \
+              # Get DNS validation records for PENDING_VALIDATION domains only
+              VALIDATION_RECORDS=$(aws acm describe-certificate \
                 --certificate-arn "$CERT_ARN" \
                 --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
-                --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
-                --output json 2>/dev/null || true)
+                --query 'Certificate.DomainValidationOptions[?ValidationStatus==`PENDING_VALIDATION`].ResourceRecord' \
+                --output json 2>/dev/null || echo "[]")
 
-              if [ -z "$VALIDATION_RECORD" ] || [ "$VALIDATION_RECORD" = "null" ]; then
+              if [ "$VALIDATION_RECORDS" = "[]" ] || [ -z "$VALIDATION_RECORDS" ]; then
                 echo "❌ Could not get DNS validation records"
                 exit 1
               fi
 
-              VALIDATION_NAME=$(echo "$VALIDATION_RECORD" | jq -r '.Name' 2>/dev/null)
-              VALIDATION_VALUE=$(echo "$VALIDATION_RECORD" | jq -r '.Value' 2>/dev/null)
+              echo "DEBUG: DEBUG: All validation records found:"
+              echo "$VALIDATION_RECORDS" | jq '.' || echo "Failed to parse validation records"
 
-              echo "📋 DNS Validation Record:"
-              echo "  Name: $VALIDATION_NAME"
-              echo "  Value: $VALIDATION_VALUE"
-
-              # Create Route53 record for validation
-              echo "📝 Creating Route53 validation record..."
-              jq -n --arg name "$VALIDATION_NAME" --arg value "$VALIDATION_VALUE" '{
-                "Changes": [
-                  {
-                    "Action": "UPSERT",
-                    "ResourceRecordSet": {
-                      "Name": $name,
-                      "Type": "CNAME",
-                      "TTL": 300,
-                      "ResourceRecords": [
-                        {
-                          "Value": $value
-                        }
-                      ]
-                    }
+              # Create Route53 records for all validation domains
+              echo "📝 Creating Route53 validation records for all domains..."
+              # First, create a simplified JSON structure
+              echo "$VALIDATION_RECORDS" | jq -r 'unique_by(.Name) | .[] | "\(.Name)|\(.Value)"' > /tmp/validation-pairs.txt
+              
+              # Build the Route53 change batch JSON
+              echo '{"Changes":[' > /tmp/validation-record.json
+              
+              first=true
+              while IFS='|' read -r name value; do
+                if [ "$first" = true ]; then
+                  first=false
+                else
+                  echo ',' >> /tmp/validation-record.json
+                fi
+                
+                # Use full domain name for Route53 but remove trailing dot
+                clean_name=$(echo "$name" | sed 's/\.$//')
+                
+                printf '                {
+                  "Action": "UPSERT",
+                  "ResourceRecordSet": {
+                    "Name": "%s",
+                    "Type": "CNAME",
+                    "TTL": 300,
+                    "ResourceRecords": [
+                      {
+                        "Value": "%s"
+                      }
+                    ]
                   }
-                ]
-              }' > /tmp/validation-record.json
+                }' "$clean_name" "$value" >> /tmp/validation-record.json
+              done < /tmp/validation-pairs.txt
+              
+              echo ']}' >> /tmp/validation-record.json
 
+              echo "DEBUG: Route53 change batch JSON:"
+              cat /tmp/validation-record.json | jq '.' || echo "Failed to parse change batch JSON"
+
+              echo "DEBUG: Calling Route53 API with hosted zone: $HOSTED_ZONE_ID"
               CHANGE_ID=$(aws route53 change-resource-record-sets \
                 --hosted-zone-id "$HOSTED_ZONE_ID" \
                 --change-batch file:///tmp/validation-record.json \
                 --query 'ChangeInfo.Id' \
-                --output text 2>/dev/null || true)
+                --output text 2>&1)
+              
+              if [ $? -ne 0 ]; then
+                echo "❌ Route53 API call failed:"
+                echo "$CHANGE_ID"
+                exit 1
+              fi
 
               if [ -z "$CHANGE_ID" ] || [ "$CHANGE_ID" = "None" ]; then
                 echo "❌ Failed to create Route53 validation record"
@@ -318,7 +340,7 @@ jobs:
           fi
 
           # Check certificate status
-          echo "🔍 Checking certificate status..."
+          echo "DEBUG: Checking certificate status..."
           CERT_STATUS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
             --query 'Certificate.Status' --output text 2>/dev/null || echo "UNKNOWN")
 
@@ -329,7 +351,7 @@ jobs:
 
             # Find Route53 hosted zone for the domain
             DOMAIN_BASE="{{sld}}.{{tld}}"
-            echo "🔍 Finding Route53 hosted zone for: $DOMAIN_BASE"
+            echo "DEBUG: Finding Route53 hosted zone for: $DOMAIN_BASE"
 
             HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
               --query "HostedZones[?Name=='$DOMAIN_BASE.'].Id" \
@@ -344,7 +366,7 @@ jobs:
             echo "✅ Found Route53 hosted zone: $HOSTED_ZONE_ID"
 
             # Get DNS validation records (same as Cloudflare workflow)
-            echo "🔍 Getting DNS validation records..."
+            echo "DEBUG: Getting DNS validation records..."
             aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
               --query 'Certificate.DomainValidationOptions[].ResourceRecord.{Name:Name,Type:Type,Value:Value}' \
               --output table 2>/dev/null || true
@@ -352,9 +374,9 @@ jobs:
             echo ""
             echo "📝 Creating Route53 validation records automatically..."
 
-            # Get all validation records as JSON
+            # Get validation records for PENDING_VALIDATION domains only
             VALIDATION_RECORDS=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region {{{githubVarsOpen}}} env.AWS_REGION {{{githubVarsClose}}} \
-              --query 'Certificate.DomainValidationOptions[].ResourceRecord' \
+              --query 'Certificate.DomainValidationOptions[?ValidationStatus==`PENDING_VALIDATION`].ResourceRecord' \
               --output json 2>/dev/null || echo "[]")
 
             if [ "$VALIDATION_RECORDS" = "[]" ] || [ -z "$VALIDATION_RECORDS" ]; then
@@ -362,30 +384,61 @@ jobs:
               exit 1
             fi
 
-            # Build Route53 change batch (deduplicate records and strip domain suffix)
-            jq -n --argjson records "$VALIDATION_RECORDS" --arg domain "{{sld}}.{{tld}}." '{
-              "Changes": [
-                $records | unique_by(.Name) | .[] | {
-                  "Action": "UPSERT",
-                  "ResourceRecordSet": {
-                    "Name": (.Name | if endswith($domain) then .[:-($domain|length)] else . end | rtrimstr(".")),
-                    "Type": "CNAME",
-                    "TTL": 300,
-                    "ResourceRecords": [
-                      {
-                        "Value": .Value
-                      }
-                    ]
-                  }
-                }
-              ]
-            }' > /tmp/validation-record.json
+            echo "DEBUG: DEBUG: Validation records found:"
+            echo "$VALIDATION_RECORDS" | jq '.' || echo "Failed to parse validation records"
 
+            # Build Route53 change batch (deduplicate records and strip domain suffix)
+            # First, create a simplified JSON structure
+            echo "$VALIDATION_RECORDS" | jq -r 'unique_by(.Name) | .[] | "\(.Name)|\(.Value)"' > /tmp/validation-pairs.txt
+            
+            # Build the Route53 change batch JSON
+            echo '{"Changes":[' > /tmp/validation-record.json
+            
+            first=true
+            while IFS='|' read -r name value; do
+              if [ "$first" = true ]; then
+                first=false
+              else
+                echo ',' >> /tmp/validation-record.json
+              fi
+              
+              # Strip domain suffix and trailing dots for Route53
+              clean_name=$(echo "$name" | sed 's/\.$//')
+              
+              cat >> /tmp/validation-record.json << EOF
+              {
+                "Action": "UPSERT",
+                "ResourceRecordSet": {
+                  "Name": "$clean_name",
+                  "Type": "CNAME",
+                  "TTL": 300,
+                  "ResourceRecords": [
+                    {
+                      "Value": "$value"
+                    }
+                  ]
+                }
+              }
+EOF
+            done < /tmp/validation-pairs.txt
+            
+            echo ']}' >> /tmp/validation-record.json
+
+            echo "DEBUG: Route53 change batch JSON:"
+            cat /tmp/validation-record.json | jq '.' || echo "Failed to parse change batch JSON"
+
+            echo "DEBUG: Calling Route53 API with hosted zone: $HOSTED_ZONE_ID"
             CHANGE_ID=$(aws route53 change-resource-record-sets \
               --hosted-zone-id "$HOSTED_ZONE_ID" \
               --change-batch file:///tmp/validation-record.json \
               --query 'ChangeInfo.Id' \
-              --output text 2>/dev/null || true)
+              --output text 2>&1)
+            
+            if [ $? -ne 0 ]; then
+              echo "❌ Route53 API call failed:"
+              echo "$CHANGE_ID"
+              exit 1
+            fi
 
             if [ -z "$CHANGE_ID" ] || [ "$CHANGE_ID" = "None" ]; then
               echo "❌ Failed to create Route53 validation record"
@@ -440,7 +493,7 @@ jobs:
           echo "✅ Certificate is valid and issued"
 
           # Get target group ARN using correct naming pattern
-          echo "🔍 Getting target group..."
+          echo "DEBUG: Getting target group..."
           TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
             --query "TargetGroups[?TargetGroupName=='$PROJECT_NAME-$ENVIRONMENT-tg'].TargetGroupArn" \
             --output text 2>/dev/null || true)
@@ -520,7 +573,7 @@ jobs:
 
       - name: Update Route53 DNS for ALB
         run: |
-          echo "🔍 Setting up Route53 DNS for ALB..."
+          echo "DEBUG: Setting up Route53 DNS for ALB..."
 
           # Get ALB DNS name from environment
           ALB_DNS="{{{githubVarsOpen}}} env.ALB_DNS {{{githubVarsClose}}}"
@@ -546,7 +599,7 @@ jobs:
           echo "  Zone: $DOMAIN_BASE"
 
           # Find Route53 hosted zone
-          echo "🔍 Finding Route53 hosted zone for: $DOMAIN_BASE"
+          echo "DEBUG: Finding Route53 hosted zone for: $DOMAIN_BASE"
           HOSTED_ZONE_ID=$(aws route53 list-hosted-zones \
             --query "HostedZones[?Name=='$DOMAIN_BASE.'].Id" \
             --output text 2>/dev/null | sed 's|/hostedzone/||' || true)
